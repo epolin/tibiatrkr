@@ -1,223 +1,350 @@
-// === Configura con tus valores ===
-const SUPABASE_URL = "https://kqggdbjwwiyzhhnblfmd.supabase.co";     // <-- cambia
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZ2dkYmp3d2l5emhobmJsZm1kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTkyNTgsImV4cCI6MjA3MjY3NTI1OH0.nOcDOSNOhyN_CSboaAfuHvbRQic4NPWgpL78SBG7tT0";                     // <-- cambia
-// =================================
+// =====================
+//  Configuración
+// =====================
+const SUPABASE_URL = "https://kqggdbjwwiyzhhnblfmd.supabase.co";   // <-- CAMBIA
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZ2dkYmp3d2l5emhobmJsZm1kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTkyNTgsImV4cCI6MjA3MjY3NTI1OH0.nOcDOSNOhyN_CSboaAfuHvbRQic4NPWgpL78SBG7tT0";                  // <-- CAMBIA
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-let snaps = [];
-let deaths = [];
+// Rango de días a cargar inicialmente
+const DEFAULT_DAYS = 60;
+
+// =====================
+//  Estado global
+// =====================
+let snaps = [];      // snapshots (últimos N días)
+let deaths = [];     // deaths (últimos N días)
+let gainsLog = [];   // daily_gains_log (últimos N días)
+
 let lineChart, barChart;
 
-const byDateAsc = (a,b) => (a.date || a.death_time_utc).localeCompare(b.date || b.death_time_utc);
+// =====================
+//  Helpers
+// =====================
+const sel = (id) => document.getElementById(id);
 const uniq = (arr) => [...new Set(arr)];
-const fmt = (d) => d?.slice(0,10) || "";
+const byDateAsc = (a, b) => {
+  const da = (a.date ?? a.death_time_utc);
+  const db = (b.date ?? b.death_time_utc);
+  return String(da).localeCompare(String(db));
+};
+const fmtDate = (d) => (d ? String(d).slice(0, 10) : "");
 
-function sel(id){ return document.getElementById(id); }
-
-function groupBy(arr, key){
-  return arr.reduce((acc, cur)=>{
+// Agrupar por key
+function groupBy(arr, key) {
+  return arr.reduce((acc, cur) => {
     const k = cur[key];
     (acc[k] ||= []).push(cur);
     return acc;
   }, {});
 }
 
-// --------- Carga de datos desde Supabase ----------
-async function loadData(days=60){
-  const since = new Date(); since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().slice(0,10);
+// Último snapshot por (player, date)
+function lastSnapshotByPlayerDate(data) {
+  const map = new Map(); // key: `${player}|${date}` -> row más reciente
+  for (const r of data) {
+    const key = `${r.player}|${r.date}`;
+    const prev = map.get(key);
+    // usamos inserted_at si existe para decidir el más reciente
+    if (!prev || (r.inserted_at || "") > (prev.inserted_at || "")) {
+      map.set(key, r);
+    }
+  }
+  return map;
+}
 
-  // snapshots últimos N días
-  const { data: s, error: e1 } = await sb.from("snapshots")
+// =====================
+//  Carga de datos
+// =====================
+async function loadSnapshots(days = DEFAULT_DAYS) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().slice(0, 10);
+
+  const { data, error } = await sb
+    .from("snapshots")
     .select("*")
     .gte("date", sinceStr)
     .order("date", { ascending: true });
-  if (e1) { console.error(e1); sel("status").textContent = "Error cargando snapshots"; return; }
-
-  // deaths últimos N días
-  const { data: d, error: e2 } = await sb.from("deaths")
-    .select("*")
-    .gte("death_time_utc", new Date(Date.now()-1000*60*60*24*days).toISOString())
-    .order("death_time_utc", { ascending: false });
-  if (e2) { console.error(e2); sel("status").textContent = "Error cargando deaths"; return; }
-
-  snaps = s || [];
-  deaths = d || [];
-  sel("status").textContent = `Cargados ${snaps.length} snapshots y ${deaths.length} deaths (últimos ${days} días)`;
+  if (error) {
+    console.error("snapshots error", error);
+    sel("status").textContent = "Error cargando snapshots";
+    return [];
+  }
+  return data || [];
 }
 
-// --------- Filtros ----------
-function populateFilters(){
-  const players = uniq(snaps.map(r=>r.player)).sort((a,b)=>a.localeCompare(b));
-  const vocs = uniq(snaps.map(r=>r.vocation).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
+async function loadDeaths(days = DEFAULT_DAYS) {
+  const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * days).toISOString();
+  const { data, error } = await sb
+    .from("deaths")
+    .select("*")
+    .gte("death_time_utc", sinceIso)
+    .order("death_time_utc", { ascending: false });
+  if (error) {
+    console.error("deaths error", error);
+    sel("status").textContent = "Error cargando deaths";
+    return [];
+  }
+  return data || [];
+}
 
-  sel("playerSelect").innerHTML = `<option value="__ALL__">Todos</option>` + players.map(p=>`<option>${p}</option>`).join("");
-  sel("vocationSelect").innerHTML = `<option value="__ALL__">Todas</option>` + vocs.map(v=>`<option>${v}</option>`).join("");
+async function loadGainsLog(days = DEFAULT_DAYS) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().slice(0, 10);
 
-  sel("resetBtn").addEventListener("click", ()=>{
-    sel("playerSelect").value="__ALL__";
-    sel("vocationSelect").value="__ALL__";
-    sel("startDate").value="";
-    sel("endDate").value="";
+  const { data, error } = await sb
+    .from("daily_gains_log")
+    .select("*")
+    .gte("date", sinceStr)
+    .order("date", { ascending: true });
+  if (error) {
+    console.error("gains_log error", error);
+    sel("status").textContent = "Error cargando daily gains";
+    return [];
+  }
+  return data || [];
+}
+
+async function loadData() {
+  sel("status").textContent = "Cargando…";
+  const [s, d, g] = await Promise.all([
+    loadSnapshots(DEFAULT_DAYS),
+    loadDeaths(DEFAULT_DAYS),
+    loadGainsLog(DEFAULT_DAYS),
+  ]);
+  snaps = s;
+  deaths = d;
+  gainsLog = g;
+  sel("status").textContent = `Cargados ${snaps.length} snapshots, ${gainsLog.length} daily gains y ${deaths.length} deaths (últimos ${DEFAULT_DAYS} días)`;
+}
+
+// =====================
+//  Filtros
+// =====================
+function populateFilters() {
+  const players = uniq(snaps.map((r) => r.player)).sort((a, b) => a.localeCompare(b));
+  const vocs = uniq(snaps.map((r) => r.vocation).filter(Boolean)).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
+  sel("playerSelect").innerHTML =
+    `<option value="__ALL__">Todos</option>` + players.map((p) => `<option>${p}</option>`).join("");
+  sel("vocationSelect").innerHTML =
+    `<option value="__ALL__">Todas</option>` + vocs.map((v) => `<option>${v}</option>`).join("");
+
+  sel("resetBtn").addEventListener("click", () => {
+    sel("playerSelect").value = "__ALL__";
+    sel("vocationSelect").value = "__ALL__";
+    sel("startDate").value = "";
+    sel("endDate").value = "";
     render();
   });
 
-  ["playerSelect","vocationSelect","startDate","endDate"].forEach(id=>{
-    sel(id).addEventListener("change", render);
-  });
+  ["playerSelect", "vocationSelect", "startDate", "endDate"].forEach((id) =>
+    sel(id).addEventListener("change", render)
+  );
 
-  // tabs
-  sel("tabSnap").addEventListener("click", (e)=>{ e.preventDefault(); showSnap(); });
-  sel("tabDeaths").addEventListener("click", (e)=>{ e.preventDefault(); showDeaths(); });
+  // Tabs
+  sel("tabSnap").addEventListener("click", (e) => {
+    e.preventDefault();
+    showSnap();
+  });
+  sel("tabDeaths").addEventListener("click", (e) => {
+    e.preventDefault();
+    showDeaths();
+  });
 }
 
-function applyFiltersSnap(data){
+function applyFiltersSnap(data) {
   const p = sel("playerSelect").value;
   const v = sel("vocationSelect").value;
   const sd = sel("startDate").value;
   const ed = sel("endDate").value;
 
-  return data.filter(r=>{
-    if (p!=="__ALL__" && r.player !== p) return false;
-    if (v!=="__ALL__" && r.vocation !== v) return false;
+  return data.filter((r) => {
+    if (p !== "__ALL__" && r.player !== p) return false;
+    if (v !== "__ALL__" && r.vocation !== v) return false;
     if (sd && r.date < sd) return false;
     if (ed && r.date > ed) return false;
     return true;
   });
 }
 
-function applyFiltersDeaths(data){
+function applyFiltersDeaths(data) {
   const p = sel("playerSelect").value;
   const sd = sel("startDate").value;
   const ed = sel("endDate").value;
 
-  return data.filter(r=>{
-    const d = r.death_time_utc;
-    if (p!=="__ALL__" && r.player !== p) return false;
+  return data.filter((r) => {
+    const d = String(r.death_time_utc);
+    if (p !== "__ALL__" && r.player !== p) return false;
     if (sd && d < sd) return false;
-    if (ed && d > (ed + "T23:59:59Z")) return false;
+    if (ed && d > ed + "T23:59:59Z") return false;
     return true;
   });
 }
 
-// --------- KPIs ----------
-function computeKPIs(filtered){
-  if (!filtered.length){ 
-    sel("kpiPlayers").textContent="-";
-    sel("kpiAvgGain").textContent="-";
-    sel("kpiTop").textContent="-";
-    sel("kpiTopGain").textContent="";
-    sel("kpiLastUpdate").textContent="-";
-    return;
-  }
+function applyFiltersGains(data) {
+  const p = sel("playerSelect").value;
+  const sd = sel("startDate").value;
+  const ed = sel("endDate").value;
 
-  const lastDate = filtered.map(r=>r.date).sort().at(-1);
-  const prevDate = filtered.map(r=>r.date).filter(d=>d<lastDate).sort().at(-1);
+  return data.filter((r) => {
+    if (p !== "__ALL__" && r.player !== p) return false;
+    if (sd && r.date < sd) return false;
+    if (ed && r.date > ed) return false;
+    return true;
+  });
+}
 
-  const latestByPlayer = Object.values(groupBy(filtered.filter(r=>r.date===lastDate), "player"))
-    .map(rows => rows.sort((a,b)=>a.date.localeCompare(b.date)).at(-1));
+// =====================
+//  KPIs
+// =====================
+function computeKPIs(filteredSnaps, filteredGains) {
+  // Jugadores con snapshot más reciente
+  const lastDate = filteredSnaps.map((r) => r.date).sort().at(-1);
+  const latestByPlayer = Object.values(groupBy(filteredSnaps.filter((r) => r.date === lastDate), "player"))
+    .map((rows) => rows.sort(byDateAsc).at(-1));
 
-  let deltas = [];
-  if (prevDate){
-    const prevByPlayer = Object.fromEntries(
-      Object.values(groupBy(filtered.filter(r=>r.date===prevDate), "player"))
-        .map(rows => [rows[0].player, rows.sort((a,b)=>a.date.localeCompare(b.date)).at(-1).level])
-    );
-    deltas = latestByPlayer.map(r => ({ player: r.player, gain: (r.level ?? 0) - (prevByPlayer[r.player] ?? (r.level ?? 0)) }));
-  }
+  // Avg gain / Top gainer del último día con gains
+  const lastGainDate = filteredGains.map((g) => g.date).sort().at(-1);
+  const gainsLast = filteredGains.filter((g) => g.date === lastGainDate);
 
-  const avgGain = deltas.length ? (deltas.reduce((s,x)=>s+x.gain,0)/deltas.length) : 0;
-  const top = deltas.sort((a,b)=>b.gain-a.gain)[0] || {player:"-", gain:0};
+  const avgGain =
+    gainsLast.length ? gainsLast.reduce((s, x) => s + (x.gain || 0), 0) / gainsLast.length : 0;
+  const top = gainsLast.sort((a, b) => (b.gain || 0) - (a.gain || 0))[0] || { player: "-", gain: 0 };
 
-  sel("kpiPlayers").textContent = uniq(latestByPlayer.map(r=>r.player)).length;
+  sel("kpiPlayers").textContent = uniq(latestByPlayer.map((r) => r.player)).length || "-";
   sel("kpiAvgGain").textContent = avgGain.toFixed(2);
-  sel("kpiTop").textContent = top.player;
-  sel("kpiTopGain").textContent = top.player==="-" ? "" : `+${top.gain}`;
+  sel("kpiTop").textContent = top.player || "-";
+  sel("kpiTopGain").textContent = top.player === "-" ? "" : `+${top.gain}`;
   sel("kpiLastUpdate").textContent = lastDate || "-";
 }
 
-// --------- Tablas ----------
-function renderSnapTable(filtered){
+// =====================
+//  Tablas
+// =====================
+function renderSnapTable(filteredSnaps, filteredGains) {
   const tbody = sel("snapTable");
-  const byPlayer = groupBy(filtered, "player");
-  const rows = Object.values(byPlayer).map(list => list.sort(byDateAsc));
+  if (!filteredSnaps.length) {
+    tbody.innerHTML = `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`;
+    return;
+  }
 
-  const last7 = new Date(); last7.setDate(last7.getDate()-7);
-  const last7s = last7.toISOString().slice(0,10);
+  const byPlayer = groupBy(filteredSnaps, "player");
+  const last7 = new Date();
+  last7.setDate(last7.getDate() - 7);
+  const last7Str = last7.toISOString().slice(0, 10);
 
-  const html = rows.map(list=>{
-    const latest = list.at(-1);
-    const past = list.find(r=>r.date >= last7s) || list[0];
-    const gain7 = (latest.level ?? 0) - (past.level ?? 0);
-    return `
-      <tr class="border-t border-slate-800">
-        <td class="py-2">${latest.player}</td>
-        <td class="py-2">${latest.vocation || "-"}</td>
-        <td class="py-2 text-right">${latest.level ?? "-"}</td>
-        <td class="py-2 text-right">${gain7 >= 0 ? "+"+gain7 : gain7}</td>
-        <td class="py-2 text-right">${latest.date}</td>
-      </tr>
-    `;
-  }).join("");
+  const gainsByKey = new Map(); // key: `${player}|${date}` -> gain
+  for (const g of filteredGains) {
+    gainsByKey.set(`${g.player}|${g.date}`, g.gain ?? 0);
+  }
 
-  tbody.innerHTML = html || `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`;
+  const html = Object.values(byPlayer)
+    .map((list) => list.sort(byDateAsc))
+    .map((list) => {
+      const latest = list.at(-1);
+      // Ganancia 7d = suma de gains últimos 7 días de ese player
+      const g7 = filteredGains
+        .filter((g) => g.player === latest.player && g.date >= last7Str)
+        .reduce((s, x) => s + (x.gain || 0), 0);
+
+      return `
+        <tr class="border-t border-slate-800">
+          <td class="py-2">${latest.player}</td>
+          <td class="py-2">${latest.vocation || "-"}</td>
+          <td class="py-2 text-right">${latest.level ?? "-"}</td>
+          <td class="py-2 text-right">${g7 >= 0 ? "+" + g7 : g7}</td>
+          <td class="py-2 text-right">${latest.date}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  tbody.innerHTML = html;
 }
 
-function renderDeathTable(filtered){
+function renderDeathTable(filteredDeaths) {
   const tbody = sel("deathTable");
+  if (!filteredDeaths.length) {
+    tbody.innerHTML = `<tr><td class="py-3 text-slate-400">Sin deaths en el rango</td></tr>`;
+    return;
+  }
+
   const now = Date.now();
+  const html = filteredDeaths
+    .sort(byDateAsc)
+    .reverse()
+    .map((d) => {
+      const diffDays = Math.floor((now - new Date(d.death_time_utc).getTime()) / 86400000);
+      const killers = (d.killers || []).join("; ");
+      const assists = (d.assists || []).join("; ");
+      return `
+        <tr class="border-t border-slate-800">
+          <td class="py-2">${d.player}</td>
+          <td class="py-2">${d.death_time_utc}</td>
+          <td class="py-2 text-right">${d.level_at_death ?? "-"}</td>
+          <td class="py-2">${d.reason || "-"}</td>
+          <td class="py-2">${killers || "-"}</td>
+          <td class="py-2">${assists || "-"}</td>
+          <td class="py-2 text-right">${diffDays}</td>
+        </tr>
+      `;
+    })
+    .join("");
 
-  const html = filtered.sort(byDateAsc).reverse().map(d=>{
-    const diffDays = Math.floor((now - new Date(d.death_time_utc).getTime()) / 86400000);
-    const killers = (d.killers || []).join("; ");
-    const assists = (d.assists || []).join("; ");
-    return `
-      <tr class="border-t border-slate-800">
-        <td class="py-2">${d.player}</td>
-        <td class="py-2">${d.death_time_utc}</td>
-        <td class="py-2 text-right">${d.level_at_death ?? "-"}</td>
-        <td class="py-2">${d.reason || "-"}</td>
-        <td class="py-2">${killers || "-"}</td>
-        <td class="py-2">${assists || "-"}</td>
-        <td class="py-2 text-right">${diffDays}</td>
-      </tr>
-    `;
-  }).join("");
-
-  tbody.innerHTML = html || `<tr><td class="py-3 text-slate-400">Sin deaths en el rango</td></tr>`;
+  tbody.innerHTML = html;
 }
 
-// --------- Gráficas ----------
-function renderLineChart(filtered){
+// =====================
+//  Gráficas
+// =====================
+
+// LineChart:
+// - Si hay player seleccionado -> serie de "gain por día" (daily_gains_log)
+// - Si está "Todos" -> promedio de level por vocación por día (desde snapshots)
+function renderLineChart(filteredSnaps, filteredGains) {
   const ctx = sel("lineChart");
   if (lineChart) lineChart.destroy();
 
-  const psel = sel("playerSelect").value;
+  const playerSel = sel("playerSelect").value;
 
-  if (psel !== "__ALL__"){
-    const series = filtered.filter(r=>r.player===psel).sort(byDateAsc);
+  if (playerSel !== "__ALL__") {
+    // Serie de gains por día del jugador
+    const series = filteredGains
+      .filter((g) => g.player === playerSel)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
     lineChart = new Chart(ctx, {
       type: "line",
       data: {
-        labels: series.map(r=>r.date),
-        datasets: [{ label: psel, data: series.map(r=>r.level ?? 0) }]
+        labels: series.map((r) => r.date),
+        datasets: [
+          {
+            label: `Ganancia diaria - ${playerSel}`,
+            data: series.map((r) => r.gain ?? 0),
+          },
+        ],
       },
-      options: { responsive: true, maintainAspectRatio: false }
+      options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
     });
     return;
   }
 
-  const byDate = groupBy(filtered, "date");
+  // Promedio de level por vocación por día
+  const byDate = groupBy(filteredSnaps, "date");
   const dates = Object.keys(byDate).sort();
 
-  const vocSet = uniq(filtered.map(r=>r.vocation).filter(Boolean));
-  const datasets = vocSet.map(voc=>{
-    const arr = dates.map(d=>{
-      const rows = byDate[d].filter(x=>x.vocation===voc);
+  const vocs = uniq(filteredSnaps.map((r) => r.vocation).filter(Boolean)).sort();
+  const datasets = vocs.map((voc) => {
+    const arr = dates.map((d) => {
+      const rows = byDate[d].filter((x) => x.vocation === voc);
       if (!rows.length) return null;
-      const avg = rows.reduce((s,x)=>s+(x.level ?? 0), 0) / rows.length;
-      return Math.round(avg*100)/100;
+      const avg = rows.reduce((s, x) => s + (x.level ?? 0), 0) / rows.length;
+      return Math.round(avg * 100) / 100;
     });
     return { label: voc, data: arr };
   });
@@ -225,68 +352,77 @@ function renderLineChart(filtered){
   lineChart = new Chart(ctx, {
     type: "line",
     data: { labels: dates, datasets },
-    options: { responsive: true, maintainAspectRatio: false, spanGaps: true }
+    options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
   });
 }
 
-function renderBarChart(filtered){
+// BarChart: Ganancia acumulada por vocación en últimos 7 días
+// Para asignar vocación por (player, date), usamos el último snapshot de ese día.
+function renderBarChart(filteredSnaps, filteredGains) {
   const ctx = sel("barChart");
   if (barChart) barChart.destroy();
 
-  const cut = new Date(); cut.setDate(cut.getDate()-7);
-  const cutStr = cut.toISOString().slice(0,10);
-  const recent = filtered.filter(r=>r.date >= cutStr);
+  const cut = new Date();
+  cut.setDate(cut.getDate() - 7);
+  const cutStr = cut.toISOString().slice(0, 10);
 
-  const byPlayer = groupBy(recent, "player");
+  const gainsRecent = filteredGains.filter((g) => g.date >= cutStr);
+
+  // Mapa (player|date) -> snapshot del día (para conocer vocación del día)
+  const lastByPD = lastSnapshotByPlayerDate(filteredSnaps);
+
   const gainsByVoc = {};
-
-  for (const list of Object.values(byPlayer)){
-    const sorted = list.sort(byDateAsc);
-    if (sorted.length < 2) continue;
-    const gain = (sorted.at(-1).level ?? 0) - (sorted[0].level ?? 0);
-    const voc = sorted.at(-1).vocation || "Unknown";
-    gainsByVoc[voc] = (gainsByVoc[voc] || 0) + gain;
+  for (const g of gainsRecent) {
+    const key = `${g.player}|${g.date}`;
+    const snap = lastByPD.get(key);
+    const voc = (snap && snap.vocation) || "Unknown";
+    gainsByVoc[voc] = (gainsByVoc[voc] || 0) + (g.gain || 0);
   }
 
-  const labels = Object.keys(gainsByVoc);
-  const data = Object.values(gainsByVoc);
+  const labels = Object.keys(gainsByVoc).sort();
+  const data = labels.map((k) => gainsByVoc[k]);
 
   barChart = new Chart(ctx, {
     type: "bar",
     data: { labels, datasets: [{ label: "Ganancia 7 días", data }] },
-    options: { responsive: true, maintainAspectRatio: false }
+    options: { responsive: true, maintainAspectRatio: false },
   });
 }
 
-// --------- Render principal ----------
-function render(){
-  // Sección activa (snapshots o deaths) usa mismos filtros de arriba
-  const filteredSnap = applyFiltersSnap(snaps);
-  const filteredDeath = applyFiltersDeaths(deaths);
+// =====================
+//  Render principal
+// =====================
+function render() {
+  // Filtro base
+  const fSnaps = applyFiltersSnap(snaps);
+  const fDeaths = applyFiltersDeaths(deaths);
+  const fGains = applyFiltersGains(gainsLog);
 
-  computeKPIs(filteredSnap);
-  renderLineChart(filteredSnap);
-  renderBarChart(filteredSnap);
-  renderSnapTable(filteredSnap);
-  renderDeathTable(filteredDeath);
+  computeKPIs(fSnaps, fGains);
+  renderLineChart(fSnaps, fGains);
+  renderBarChart(fSnaps, fGains);
+  renderSnapTable(fSnaps, fGains);
+  renderDeathTable(fDeaths);
 }
 
-function showSnap(){
+function showSnap() {
   sel("deathTableSec").classList.add("hidden");
   sel("snapTableSec").classList.remove("hidden");
   sel("charts").classList.remove("hidden");
   sel("kpis").classList.remove("hidden");
 }
-function showDeaths(){
+function showDeaths() {
   sel("snapTableSec").classList.add("hidden");
   sel("charts").classList.add("hidden");
   sel("kpis").classList.add("hidden");
   sel("deathTableSec").classList.remove("hidden");
 }
 
-// --------- Init ----------
-(async function init(){
-  await loadData(60);
+// =====================
+//  Init
+// =====================
+(async function init() {
+  await loadData();
   populateFilters();
   showSnap();
   render();
