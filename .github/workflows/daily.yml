@@ -5,30 +5,26 @@ on:
     - cron: "0 9 * * *"   # 09:00 UTC = 03:00 AM America/Mexico_City
   workflow_dispatch:
 
+permissions:
+  contents: read  # no hacemos push
+
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run scraper
+      - name: Run scraper -> Supabase
         run: python scripts/scrape_tibia.py
-
-      - name: Commit results (CSV y sitio)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/data/levels.csv
-          git diff --cached --quiet || git commit -m "data: update levels $(date -u +'%Y-%m-%d')"
-          git push
