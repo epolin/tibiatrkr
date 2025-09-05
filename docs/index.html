@@ -11,19 +11,22 @@
 </head>
 <body class="bg-slate-950 text-slate-100">
   <header class="px-6 py-5 border-b border-slate-800">
-    <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
       <h1 class="text-2xl font-semibold">Tibia Level Tracker</h1>
-      <nav class="text-sm text-slate-400 space-x-4">
-        <a class="hover:text-white" href="#" id="tabSnap">Snapshots</a>
+      <nav class="text-sm text-slate-400 space-x-6">
+        <a class="hover:text-white" href="#" id="tabOverview">Overview</a>
+        <a class="hover:text-white" href="#" id="tabPlayers">Players</a>
         <a class="hover:text-white" href="#" id="tabDeaths">Deaths</a>
+        <a class="hover:text-white" href="#" id="tabLeaders">Leaderboards</a>
       </nav>
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-6 py-6 space-y-6">
-    <!-- Filtros -->
-    <section class="grid md:grid-cols-4 gap-4">
-      <div>
+  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Filtros globales -->
+    <section class="grid md:grid-cols-5 gap-4">
+      <div class="md:col-span-2">
         <label class="block text-sm mb-1">Jugador</label>
         <select id="playerSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2"></select>
       </div>
@@ -39,84 +42,131 @@
         <label class="block text-sm mb-1">Hasta</label>
         <input id="endDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
       </div>
-      <div class="md:col-span-4 flex gap-2">
+      <div class="md:col-span-5 flex gap-2">
         <button id="resetBtn" class="bg-slate-100 text-slate-900 rounded-xl px-4 py-2">Limpiar filtros</button>
         <span id="status" class="text-slate-400 text-sm self-center"></span>
       </div>
     </section>
 
-    <!-- KPIs -->
-    <section id="kpis" class="grid md:grid-cols-4 gap-4">
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <div class="text-slate-400 text-sm">Jugadores</div>
-        <div id="kpiPlayers" class="text-3xl font-semibold">-</div>
+    <!-- OVERVIEW -->
+    <section id="viewOverview" class="space-y-6">
+      <div id="kpis" class="grid md:grid-cols-4 gap-4">
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <div class="text-slate-400 text-sm">Jugadores activos</div>
+          <div id="kpiPlayers" class="text-3xl font-semibold">-</div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <div class="text-slate-400 text-sm">Avg gain (7d / 30d)</div>
+          <div class="text-3xl font-semibold"><span id="kpiAvgGain7">-</span> / <span id="kpiAvgGain30">-</span></div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <div class="text-slate-400 text-sm">Muertes últimos 30d</div>
+          <div id="kpiDeaths30" class="text-3xl font-semibold">-</div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <div class="text-slate-400 text-sm">Streak sin morir (jugador)</div>
+          <div class="text-xl font-semibold"><span id="kpiStreakPlayer">-</span></div>
+          <div id="kpiStreakDays" class="text-slate-400 text-sm"></div>
+        </div>
       </div>
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <div class="text-slate-400 text-sm">Promedio Δ Level (últ. día)</div>
-        <div id="kpiAvgGain" class="text-3xl font-semibold">-</div>
-      </div>
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <div class="text-slate-400 text-sm">Top gainer (últ. día)</div>
-        <div id="kpiTop" class="text-xl font-semibold">-</div>
-        <div id="kpiTopGain" class="text-slate-400 text-sm"> </div>
-      </div>
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <div class="text-slate-400 text-sm">Última actualización</div>
-        <div id="kpiLastUpdate" class="text-2xl font-semibold">-</div>
+
+      <div id="chartsOverview" class="grid md:grid-cols-2 gap-6">
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Historial de Level (por jugador)</h2>
+          <canvas id="levelLineChart" height="120"></canvas>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Ganancia diaria (por jugador)</h2>
+          <canvas id="gainLineChart" height="120"></canvas>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Ganancia acumulada por Vocation (últimos 7 días)</h2>
+          <canvas id="barGainByVoc" height="120"></canvas>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Muertes por mes (últimos 6 meses)</h2>
+          <canvas id="barDeathsMonthly" height="120"></canvas>
+        </div>
       </div>
     </section>
 
-    <!-- Gráficas -->
-    <section id="charts" class="grid md:grid-cols-2 gap-6">
+    <!-- PLAYERS -->
+    <section id="viewPlayers" class="space-y-6 hidden">
       <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <h2 class="mb-2 font-semibold">Evolución</h2>
-        <canvas id="lineChart" height="120"></canvas>
-      </div>
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <h2 class="mb-2 font-semibold">Ganancia por Vocation (últimos 7 días)</h2>
-        <canvas id="barChart" height="120"></canvas>
+        <h2 class="mb-2 font-semibold">Último Level por jugador</h2>
+        <div class="overflow-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-slate-400">
+              <tr>
+                <th class="text-left py-2">Jugador</th>
+                <th class="text-left py-2">Vocation</th>
+                <th class="text-right py-2">Level</th>
+                <th class="text-right py-2">Ganancia 7d</th>
+                <th class="text-right py-2">Último registro</th>
+              </tr>
+            </thead>
+            <tbody id="snapTable"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
-    <!-- Tabla Snapshots -->
-    <section id="snapTableSec" class="bg-slate-900 rounded-2xl p-4 shadow">
-      <h2 class="mb-2 font-semibold">Último Level por jugador</h2>
-      <div class="overflow-auto">
-        <table class="min-w-full text-sm">
-          <thead class="text-slate-400">
-            <tr>
-              <th class="text-left py-2">Jugador</th>
-              <th class="text-left py-2">Vocation</th>
-              <th class="text-right py-2">Level</th>
-              <th class="text-right py-2">Ganancia 7d</th>
-              <th class="text-right py-2">Último registro</th>
-            </tr>
-          </thead>
-          <tbody id="snapTable"></tbody>
-        </table>
+    <!-- DEATHS -->
+    <section id="viewDeaths" class="space-y-6 hidden">
+      <div class="bg-slate-900 rounded-2xl p-4 shadow">
+        <h2 class="mb-2 font-semibold">Deaths recientes</h2>
+        <div class="overflow-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-slate-400">
+              <tr>
+                <th class="text-left py-2">Jugador</th>
+                <th class="text-left py-2">Fecha (UTC)</th>
+                <th class="text-right py-2">Level</th>
+                <th class="text-left py-2">Razón</th>
+                <th class="text-left py-2">Killers</th>
+                <th class="text-left py-2">Assists</th>
+                <th class="text-right py-2">Días desde muerte</th>
+              </tr>
+            </thead>
+            <tbody id="deathTable"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
-    <!-- Tabla Deaths -->
-    <section id="deathTableSec" class="bg-slate-900 rounded-2xl p-4 shadow hidden">
-      <h2 class="mb-2 font-semibold">Deaths recientes</h2>
-      <div class="overflow-auto">
-        <table class="min-w-full text-sm">
-          <thead class="text-slate-400">
-            <tr>
-              <th class="text-left py-2">Jugador</th>
-              <th class="text-left py-2">Fecha (UTC)</th>
-              <th class="text-right py-2">Level</th>
-              <th class="text-left py-2">Razón</th>
-              <th class="text-left py-2">Killers</th>
-              <th class="text-left py-2">Assists</th>
-              <th class="text-right py-2">Días desde muerte</th>
-            </tr>
-          </thead>
-          <tbody id="deathTable"></tbody>
-        </table>
+    <!-- LEADERBOARDS -->
+    <section id="viewLeaders" class="space-y-6 hidden">
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Top gainers (7 días)</h2>
+          <div class="overflow-auto">
+            <table class="min-w-full text-sm">
+              <thead class="text-slate-400"><tr><th class="text-left py-2">Jugador</th><th class="text-right py-2">Gain</th></tr></thead>
+              <tbody id="lb7"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Top gainers (30 días)</h2>
+          <div class="overflow-auto">
+            <table class="min-w-full text-sm">
+              <thead class="text-slate-400"><tr><th class="text-left py-2">Jugador</th><th class="text-right py-2">Gain</th></tr></thead>
+              <tbody id="lb30"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bg-slate-900 rounded-2xl p-4 shadow">
+          <h2 class="mb-2 font-semibold">Más muertes (30 días)</h2>
+          <div class="overflow-auto">
+            <table class="min-w-full text-sm">
+              <thead class="text-slate-400"><tr><th class="text-left py-2">Jugador</th><th class="text-right py-2">Muertes</th></tr></thead>
+              <tbody id="lbDeaths"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
+
   </main>
 
   <script src="app.js"></script>
