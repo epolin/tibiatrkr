@@ -1,6 +1,6 @@
 // === Configura con tus valores ===
-const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";     // <-- cambia
-const SUPABASE_ANON_KEY = "TU_ANON_KEY";                     // <-- cambia
+const SUPABASE_URL = "https://kqggdbjwwiyzhhnblfmd.supabase.co";     // <-- cambia
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZ2dkYmp3d2l5emhobmJsZm1kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTkyNTgsImV4cCI6MjA3MjY3NTI1OH0.nOcDOSNOhyN_CSboaAfuHvbRQic4NPWgpL78SBG7tT0";                     // <-- cambia
 // =================================
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
