@@ -334,7 +334,7 @@ function renderDeathTable(filteredDeaths) {
   const tbody = sel("deathTable");
   if (!tbody) return;
   if (!filteredDeaths.length) {
-    tbody.innerHTML = `<tr><td class="py-3 text-slate-400">Sin deaths en el rango</td></tr>`;
+    tbody.innerHTML = `<tr><td class="py-3 px-2 text-slate-400">Sin deaths en el rango</td></tr>`;
     return;
   }
 
@@ -343,21 +343,23 @@ function renderDeathTable(filteredDeaths) {
     const diffDays = Math.floor((now - new Date(d.death_time_utc).getTime()) / 86400000);
     const killers = (d.killers || []).join("; ");
     const assists = (d.assists || []).join("; ");
+
     return `
-      <tr class="border-t border-slate-800">
-        <td class="py-2">${d.player}</td>
-        <td class="py-2">${toDDMMYYYY_HHMM(d.death_time_utc)}</td>
-        <td class="py-2 text-right">${d.level_at_death ?? "-"}</td>
-        <td class="py-2">${d.reason || "-"}</td>
-        <td class="py-2">${killers || "-"}</td>
-        <td class="py-2">${assists || "-"}</td>
-        <td class="py-2 text-right">${diffDays}</td>
+      <tr class="border-t border-slate-800 align-top">
+        <td class="py-2 px-2">${d.player}</td>
+        <td class="py-2 px-2">${toDDMMYYYY_HHMM(d.death_time_utc)}</td>
+        <td class="py-2 px-2 text-right tabular-nums">${d.level_at_death ?? "-"}</td>
+        <td class="py-2 px-2 whitespace-normal break-words">${d.reason || "-"}</td>
+        <td class="py-2 px-2 whitespace-normal break-words">${killers || "-"}</td>
+        <td class="py-2 px-2 whitespace-normal break-words">${assists || "-"}</td>
+        <td class="py-2 px-2 text-right tabular-nums">${diffDays}</td>
       </tr>
     `;
   }).join("");
 
   tbody.innerHTML = html;
 }
+
 
 // =====================
 //  Leaderboards (sin cambios de formato visibles)
