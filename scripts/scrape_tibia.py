@@ -1,125 +1,122 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-import csv
-import os
-import re
-import sys
-import time
+import os, sys, time
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote_plus
-from zoneinfo import ZoneInfo
+from urllib.parse import quote
 
 import requests
-from bs4 import BeautifulSoup
+from zoneinfo import ZoneInfo
 
-# Rutas del repo
+# Rutas
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOCS_DIR = REPO_ROOT / "docs"
-DATA_DIR = DOCS_DIR / "data"
 PLAYERS_FILE = REPO_ROOT / "players.txt"
-CSV_FILE = DATA_DIR / "levels.csv"
 
-BASE_URL = "https://www.tibia.com/community/?name="
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; TibiaLevelLogger/1.1; +https://github.com/tu-usuario/tibia-level-tracker)"
+# Supabase (via REST)
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE = os.environ.get("SUPABASE_SERVICE_ROLE")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE:
+    print("Faltan SUPABASE_URL / SUPABASE_SERVICE_ROLE (Secrets de GitHub).", file=sys.stderr)
+    sys.exit(1)
+
+REST_SNAPSHOTS = f"{SUPABASE_URL}/rest/v1/snapshots"
+REST_DEATHS    = f"{SUPABASE_URL}/rest/v1/deaths"
+SB_HEADERS = {
+    "apikey": SUPABASE_SERVICE_ROLE,
+    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE}",
+    "Content-Type": "application/json",
+    "Prefer": "resolution=merge-duplicates"  # upsert si hay PK/unique
 }
 
-def _get_td_value(soup: BeautifulSoup, label: str) -> str | None:
-    td = soup.find("td", string=lambda s: s and s.strip().lower() == f"{label.lower()}:")
-    if td:
-        nxt = td.find_next("td")
-        if nxt:
-            return nxt.get_text(strip=True)
-    return None
+# TibiaData API
+API = "https://api.tibiadata.com/v4/character/{}"
+UA  = {"User-Agent": "TibiaLevelLogger/3.0 (GitHub Actions; https://github.com/epolin/tibiatrkr)"}
 
-def parse_fields(html: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
-    # Level
-    level_txt = _get_td_value(soup, "Level")
-    level = None
-    if level_txt:
-        m = re.search(r"\d+", level_txt)
-        if m:
-            level = int(m.group())
-
-    # Vocation
-    vocation = _get_td_value(soup, "Vocation")
-    # Fallbacks por regex si algo cambia
-    if level is None:
-        m = re.search(r"Level:\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>", html, re.I | re.S)
-        if m:
-            level = int(m.group(1))
-    if not vocation:
-        m = re.search(r"Vocation:\s*</td>\s*<td[^>]*>\s*([^<]+)\s*</td>", html, re.I | re.S)
-        if m:
-            vocation = m.group(1).strip()
-
-    return {"level": level, "vocation": vocation}
-
-def fetch_player(player: str) -> dict | None:
-    url = BASE_URL + quote_plus(player)
-    r = requests.get(url, headers=HEADERS, timeout=30)
+def fetch_char(name: str) -> dict:
+    r = requests.get(API.format(quote(name, safe="")), headers=UA, timeout=30)
     r.raise_for_status()
-    data = parse_fields(r.text)
-    if data["level"] is None:
-        return None
-    return {"player": player, **data}
+    return r.json()
 
-def read_existing_keys_for_today(csv_path: Path, today: str) -> set[tuple[str, str]]:
-    keys = set()
-    if not csv_path.exists():
-        return keys
-    with open(csv_path, "r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row.get("date") == today:
-                keys.add((row.get("date"), row.get("player")))
-    return keys
+def killers_assists_to_list(xs):
+    if not xs: return []
+    out=[]
+    for k in xs:
+        out.append(k.get("name") or k.get("monster") or "Unknown")
+    return out
 
 def main():
     tz = ZoneInfo("America/Mexico_City")
     today = datetime.now(tz).date().isoformat()
 
     if not PLAYERS_FILE.exists():
-        print(f"No existe {PLAYERS_FILE}. Crea el archivo con la lista de jugadores.", file=sys.stderr)
-        sys.exit(1)
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+        print("Falta players.txt", file=sys.stderr); sys.exit(1)
 
     with open(PLAYERS_FILE, "r", encoding="utf-8") as f:
         players = [p.strip() for p in f if p.strip() and not p.strip().startswith("#")]
 
-    to_append = []
-    for i, player in enumerate(players):
+    snap_payload = []
+    deaths_payload = []
+
+    for i, name in enumerate(players):
         try:
-            info = fetch_player(player)
-            if not info:
-                print(f"[WARN] No encontré Level para '{player}'.", file=sys.stderr)
-                continue
-            print(f"[OK] {info['player']}: Level {info['level']} ({info['vocation']})")
-            to_append.append([today, info["player"], info.get("vocation") or "", info["level"]])
+            js = fetch_char(name)
+            ch = js.get("characters", {}).get("character", {}) or {}
+            deaths = js.get("characters", {}).get("deaths", []) or []
+
+            snap_payload.append({
+                "date": today,
+                "player": ch.get("name") or name,
+                "world": ch.get("world"),
+                "residence": ch.get("residence"),
+                "sex": ch.get("sex"),
+                "guild": (ch.get("guild") or {}).get("name"),
+                "achievement_points": ch.get("achievement_points"),
+                "account_status": ch.get("account_status"),
+                "vocation": ch.get("vocation"),
+                "level": ch.get("level"),
+                "last_login": ch.get("last_login")
+            })
+
+            for d in deaths:
+                t = d.get("time") or d.get("date") or d.get("timestamp")
+                if not t: 
+                    continue
+                deaths_payload.append({
+                    "death_time_utc": t,
+                    "player": ch.get("name") or name,
+                    "level_at_death": d.get("level"),
+                    "reason": d.get("reason"),
+                    "killers": killers_assists_to_list(d.get("killers", [])),
+                    "assists": killers_assists_to_list(d.get("assists", []))
+                })
+
+            print(f"[OK] {name}: lvl {ch.get('level')} ({ch.get('vocation')}) | deaths: {len(deaths)}")
+
         except Exception as e:
-            print(f"[ERROR] {player}: {e}", file=sys.stderr)
-        if i < len(players) - 1:
-            time.sleep(2)
+            print(f"[ERROR] {name}: {e}", file=sys.stderr)
 
-    # Evitar duplicados del mismo día
-    existing = read_existing_keys_for_today(CSV_FILE, today)
+        if i < len(players)-1:
+            time.sleep(0.8)  # cortesía
 
-    new_file = not CSV_FILE.exists()
-    with open(CSV_FILE, "a", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        if new_file:
-            writer.writerow(["date", "player", "vocation", "level"])
-        for row in to_append:
-            key = (row[0], row[1])  # (date, player)
-            if key in existing:
-                continue
-            writer.writerow(row)
+    # Upsert snapshots (PK: date+player)
+    if snap_payload:
+        rs = requests.post(
+            REST_SNAPSHOTS, headers=SB_HEADERS, json=snap_payload,
+            params={"on_conflict": "date,player"}
+        )
+        if not rs.ok:
+            print(f"[ERROR] upsert snapshots: {rs.status_code} {rs.text}", file=sys.stderr)
 
-    print(f"Guardado en {CSV_FILE}.")
+    # Upsert deaths (PK: player+death_time_utc)
+    if deaths_payload:
+        rd = requests.post(
+            REST_DEATHS, headers=SB_HEADERS, json=deaths_payload,
+            params={"on_conflict": "player,death_time_utc"}
+        )
+        if not rd.ok:
+            print(f"[ERROR] upsert deaths: {rd.status_code} {rd.text}", file=sys.stderr)
+
+    print(f"Subidos: snapshots={len(snap_payload)} deaths={len(deaths_payload)}")
 
 if __name__ == "__main__":
     main()
