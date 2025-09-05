@@ -6,11 +6,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+
 // Rango de días a cargar inicialmente
 const DEFAULT_DAYS = 120;
 
-// =====================
-//  Estado
 // =====================
 let snaps = [];      // snapshots
 let deaths = [];     // deaths
@@ -18,8 +17,6 @@ let gainsLog = [];   // daily_gains_log
 
 let levelLineChart, gainLineChart, barGainByVoc, barDeathsMonthly;
 
-// =====================
-//  Utils
 // =====================
 const sel = (id) => document.getElementById(id);
 const uniq = (arr) => [...new Set(arr)];
@@ -148,8 +145,11 @@ function populateFilters() {
     renderAll();
   });
 
+  // Debounce para evitar renders seguidos
+  let _t;
+  const onChangeDebounced = () => { clearTimeout(_t); _t = setTimeout(renderAll, 60); };
   ["playerSelect", "vocationSelect", "startDate", "endDate"].forEach((id) =>
-    sel(id).addEventListener("change", renderAll)
+    sel(id).addEventListener("change", onChangeDebounced)
   );
 
   // Tabs
@@ -236,7 +236,7 @@ function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
   sel("kpiAvgGain30").textContent = avg30.toFixed(2);
 
   // Muertes últimos 30 días
-  const deaths30 = filteredDeaths.filter((d) => new Date(d.death_time_utc) >= cut30);
+  const deaths30 = filteredDeaths.filter((d) => new Date(d.death_time_utc) >= new Date(cut30s));
   sel("kpiDeaths30").textContent = deaths30.length;
 
   // Streak sin morir (jugador seleccionado)
@@ -345,7 +345,7 @@ function renderLeaderboards(filteredGains, filteredDeaths) {
   const top30 = Object.entries(map30).sort((a, b) => b[1] - a[1]).slice(0, 20);
 
   // Más muertes 30d
-  const deaths30 = filteredDeaths.filter((d) => new Date(d.death_time_utc) >= cut30);
+  const deaths30 = filteredDeaths.filter((d) => new Date(d.death_time_utc) >= new Date(cut30s));
   const dmap = {};
   deaths30.forEach((d) => { dmap[d.player] = (dmap[d.player] || 0) + 1; });
   const dtop = Object.entries(dmap).sort((a, b) => b[1] - a[1]).slice(0, 20);
@@ -375,7 +375,6 @@ function renderLevelLine(filteredSnaps) {
       options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
     });
   } else {
-    // Promedio de level por vocación por día
     const dates = Object.keys(byDate).sort();
     const vocs = uniq(filteredSnaps.map((r) => r.vocation).filter(Boolean)).sort();
     const datasets = vocs.map((voc) => {
@@ -407,10 +406,7 @@ function renderGainLine(filteredGains) {
 
   gainLineChart = new Chart(ctx, {
     type: "line",
-    data: {
-      labels: series.map((r) => r.date),
-      datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain ?? 0) }],
-    },
+    data: { labels: series.map((r) => r.date), datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain ?? 0) }] },
     options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
   });
 }
@@ -472,7 +468,7 @@ function renderBarDeathsMonthly(filteredDeaths) {
 }
 
 // =====================
-//  Render de cada vista
+//  Render de vistas
 // =====================
 function renderOverview() {
   const fSnaps = applyFiltersSnap(snaps);
