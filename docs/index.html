@@ -124,27 +124,27 @@
     </section>
 
     <!-- DEATHS -->
-    <section id="viewDeaths" class="space-y-6 hidden">
-      <div class="bg-slate-900 rounded-2xl p-4 shadow">
-        <h2 class="mb-2 font-semibold">Deaths recientes</h2>
-        <div class="overflow-auto">
-          <table class="min-w-full text-sm">
-            <thead class="text-slate-400">
-              <tr>
-                <th class="text-left py-2">Jugador</th>
-                <th class="text-left py-2">Fecha</th>
-                <th class="text-right py-2">Level</th>
-                <th class="text-left py-2">Razón</th>
-                <th class="text-left py-2">Killers</th>
-                <th class="text-left py-2">Assists</th>
-                <th class="text-right py-2">Días desde muerte</th>
-              </tr>
-            </thead>
-            <tbody id="deathTable"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+<section id="viewDeaths" class="space-y-6 hidden">
+  <div class="bg-slate-900 rounded-2xl p-4 shadow">
+    <h2 class="mb-2 font-semibold">Deaths recientes</h2>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm border-collapse">
+        <thead class="text-slate-400">
+          <tr>
+            <th class="text-left py-2 px-2">Jugador</th>
+            <th class="text-left py-2 px-2">Fecha</th>
+            <th class="text-right py-2 px-2">Level</th>
+            <th class="text-left py-2 px-2">Razón</th>
+            <th class="text-left py-2 px-2">Killers</th>
+            <th class="text-left py-2 px-2">Assists</th>
+            <th class="text-right py-2 px-2">Días</th>
+          </tr>
+        </thead>
+        <tbody id="deathTable"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
     <!-- LEADERBOARDS -->
     <section id="viewLeaders" class="space-y-6 hidden">
