@@ -10,12 +10,16 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DEFAULT_DAYS = 120;
 
 // =====================
+//  Estado
+// =====================
 let snaps = [];      // snapshots
 let deaths = [];     // deaths
 let gainsLog = [];   // daily_gains_log
 
 let levelLineChart, gainLineChart, barGainByVoc, barDeathsMonthly;
 
+// =====================
+//  Utils de selección
 // =====================
 const sel = (id) => document.getElementById(id);
 const uniq = (arr) => [...new Set(arr)];
@@ -24,7 +28,46 @@ const byDateAsc = (a, b) => {
   const db = (b.date ?? b.death_time_utc);
   return String(da).localeCompare(String(db));
 };
-const fmtDate = (d) => (d ? String(d).slice(0, 10) : "");
+
+// =====================
+//  Formatos de fecha (CDMX)
+// =====================
+const MX_TZ = "America/Mexico_City";
+const fmtDate = new Intl.DateTimeFormat("es-MX", {
+  timeZone: MX_TZ, day: "2-digit", month: "2-digit", year: "numeric"
+});
+const fmtDateTime = new Intl.DateTimeFormat("es-MX", {
+  timeZone: MX_TZ, day: "2-digit", month: "2-digit", year: "numeric",
+  hour: "2-digit", minute: "2-digit", hour12: false
+});
+
+// Convierte 'YYYY-MM-DD' a Date (anclando al mediodía UTC para evitar problemas de DST)
+function fromYMD(ymd) {
+  if (!ymd) return null;
+  return new Date(`${ymd}T12:00:00Z`);
+}
+// Convierte ISO UTC a Date (para death_time_utc, last_login, etc.)
+function fromISO(iso) {
+  if (!iso) return null;
+  return new Date(iso);
+}
+// dd/mm/aaaa
+function toDDMMYYYY(ymd) {
+  const d = fromYMD(ymd);
+  return d ? fmtDate.format(d) : "";
+}
+// dd/mm/aaaa hh:mm (para ISO UTC con hora)
+function toDDMMYYYY_HHMM(iso) {
+  const d = fromISO(iso);
+  return d ? fmtDateTime.format(d) : "";
+}
+
+// Días entre dos ISOs (mantengo cálculo simple en UTC)
+function daysBetween(aIso, bIso) {
+  const a = new Date(aIso).getTime();
+  const b = new Date(bIso).getTime();
+  return Math.floor((b - a) / 86400000);
+}
 
 function groupBy(arr, key) {
   return arr.reduce((acc, cur) => {
@@ -44,12 +87,6 @@ function lastSnapshotByPlayerDate(data) {
     }
   }
   return map;
-}
-
-function daysBetween(aIso, bIso) {
-  const a = new Date(aIso).getTime();
-  const b = new Date(bIso).getTime();
-  return Math.floor((b - a) / 86400000);
 }
 
 // =====================
@@ -212,16 +249,16 @@ function applyFiltersGains(data) {
 }
 
 // =====================
-//  KPIs
+//  KPIs (con formatos)
 // =====================
 function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
   // Jugadores activos = con snapshot más reciente
-  const lastDate = filteredSnaps.map((r) => r.date).sort().at(-1);
-  const latestByPlayer = Object.values(groupBy(filteredSnaps.filter((r) => r.date === lastDate), "player"))
+  const lastDateYMD = filteredSnaps.map((r) => r.date).sort().at(-1);
+  const latestByPlayer = Object.values(groupBy(filteredSnaps.filter((r) => r.date === lastDateYMD), "player"))
     .map((rows) => rows.sort(byDateAsc).at(-1));
   sel("kpiPlayers").textContent = uniq(latestByPlayer.map((r) => r.player)).length || "-";
 
-  // Avg gain 7d / 30d (IGNORAR gain = null)
+  // Avg gain 7d / 30d (ignora gain = null)
   const cut7 = new Date(); cut7.setDate(cut7.getDate() - 7); const cut7s = cut7.toISOString().slice(0, 10);
   const cut30 = new Date(); cut30.setDate(cut30.getDate() - 30); const cut30s = cut30.toISOString().slice(0, 10);
 
@@ -242,11 +279,11 @@ function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
   const pSel = sel("playerSelect").value;
   if (pSel !== "__ALL__") {
     const pDeaths = filteredDeaths.filter((d) => d.player === pSel).sort(byDateAsc);
-    const lastDeath = pDeaths.at(-1)?.death_time_utc;
-    if (lastDeath) {
-      const days = daysBetween(lastDeath, new Date().toISOString());
+    const lastDeathISO = pDeaths.at(-1)?.death_time_utc;
+    if (lastDeathISO) {
+      const days = daysBetween(lastDeathISO, new Date().toISOString());
       sel("kpiStreakPlayer").textContent = pSel;
-      sel("kpiStreakDays").textContent = `${days} días sin morir`;
+      sel("kpiStreakDays").textContent = `${days} días sin morir (última: ${toDDMMYYYY_HHMM(lastDeathISO)})`;
     } else {
       sel("kpiStreakPlayer").textContent = pSel;
       sel("kpiStreakDays").textContent = `sin deaths registradas`;
@@ -258,7 +295,7 @@ function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
 }
 
 // =====================
-//  Tablas
+//  Tablas (con formatos)
 // =====================
 function renderSnapTable(filteredSnaps, filteredGains) {
   const tbody = sel("snapTable");
@@ -276,7 +313,7 @@ function renderSnapTable(filteredSnaps, filteredGains) {
     const srt = list.sort(byDateAsc);
     const latest = srt.at(-1);
     const g7 = filteredGains
-      .filter((g) => g.player === latest.player && g.date >= last7Str && g.gain != null) // IGNORA nulls
+      .filter((g) => g.player === latest.player && g.date >= last7Str && g.gain != null)
       .reduce((s, x) => s + x.gain, 0);
 
     return `
@@ -285,7 +322,7 @@ function renderSnapTable(filteredSnaps, filteredGains) {
         <td class="py-2">${latest.vocation || "-"}</td>
         <td class="py-2 text-right">${latest.level ?? "-"}</td>
         <td class="py-2 text-right">${(g7 >= 0 ? "+" + g7 : g7)}</td>
-        <td class="py-2 text-right">${latest.date}</td>
+        <td class="py-2 text-right">${toDDMMYYYY(latest.date)}</td>
       </tr>
     `;
   }).join("");
@@ -309,7 +346,7 @@ function renderDeathTable(filteredDeaths) {
     return `
       <tr class="border-t border-slate-800">
         <td class="py-2">${d.player}</td>
-        <td class="py-2">${d.death_time_utc}</td>
+        <td class="py-2">${toDDMMYYYY_HHMM(d.death_time_utc)}</td>
         <td class="py-2 text-right">${d.level_at_death ?? "-"}</td>
         <td class="py-2">${d.reason || "-"}</td>
         <td class="py-2">${killers || "-"}</td>
@@ -323,20 +360,20 @@ function renderDeathTable(filteredDeaths) {
 }
 
 // =====================
-//  Leaderboards
+//  Leaderboards (sin cambios de formato visibles)
 // =====================
 function renderLeaderboards(filteredGains, filteredDeaths) {
   const cut7 = new Date(); cut7.setDate(cut7.getDate() - 7); const cut7s = cut7.toISOString().slice(0, 10);
   const cut30 = new Date(); cut30.setDate(cut30.getDate() - 30); const cut30s = cut30.toISOString().slice(0, 10);
 
-  // Top gainers 7d (IGNORA nulls)
+  // Top gainers 7d (ignora nulls)
   const map7 = {};
   filteredGains.filter((g) => g.date >= cut7s && g.gain != null).forEach((g) => {
     map7[g.player] = (map7[g.player] || 0) + g.gain;
   });
   const top7 = Object.entries(map7).sort((a, b) => b[1] - a[1]).slice(0, 20);
 
-  // Top gainers 30d (IGNORA nulls)
+  // Top gainers 30d (ignora nulls)
   const map30 = {};
   filteredGains.filter((g) => g.date >= cut30s && g.gain != null).forEach((g) => {
     map30[g.player] = (map30[g.player] || 0) + g.gain;
@@ -356,7 +393,7 @@ function renderLeaderboards(filteredGains, filteredDeaths) {
 }
 
 // =====================
-//  Gráficas
+//  Gráficas (etiquetas con formato dd/mm/aaaa en CDMX)
 // =====================
 function renderLevelLine(filteredSnaps) {
   const ctx = sel("levelLineChart");
@@ -370,7 +407,10 @@ function renderLevelLine(filteredSnaps) {
     const series = filteredSnaps.filter((r) => r.player === pSel).sort(byDateAsc);
     levelLineChart = new Chart(ctx, {
       type: "line",
-      data: { labels: series.map((r) => r.date), datasets: [{ label: `Level - ${pSel}`, data: series.map((r) => r.level ?? 0) }] },
+      data: {
+        labels: series.map((r) => toDDMMYYYY(r.date)),
+        datasets: [{ label: `Level - ${pSel}`, data: series.map((r) => r.level ?? 0) }],
+      },
       options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
     });
   } else {
@@ -387,7 +427,7 @@ function renderLevelLine(filteredSnaps) {
     });
     levelLineChart = new Chart(ctx, {
       type: "line",
-      data: { labels: dates, datasets },
+      data: { labels: dates.map(toDDMMYYYY), datasets },
       options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
     });
   }
@@ -402,12 +442,15 @@ function renderGainLine(filteredGains) {
   const series = pSel === "__ALL__"
     ? []
     : filteredGains
-        .filter((g) => g.player === pSel) // puede traer nulls; Chart con spanGaps los salta
+        .filter((g) => g.player === pSel)
         .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   gainLineChart = new Chart(ctx, {
     type: "line",
-    data: { labels: series.map((r) => r.date), datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain) }] },
+    data: {
+      labels: series.map((r) => toDDMMYYYY(r.date)),
+      datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain) }],
+    },
     options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
   });
 }
@@ -439,6 +482,7 @@ function renderBarGainByVoc(filteredSnaps, filteredGains) {
   });
 }
 
+// Etiquetas mensuales como "01/mm/aaaa" para cumplir dd/mm/aaaa
 function renderBarDeathsMonthly(filteredDeaths) {
   const ctx = sel("barDeathsMonthly");
   if (!ctx) return;
@@ -448,18 +492,20 @@ function renderBarDeathsMonthly(filteredDeaths) {
   const now = new Date();
   const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
   const buckets = {};
+  const labels = [];
   for (let i = 0; i < 6; i++) {
     const dt = new Date(sixAgo.getFullYear(), sixAgo.getMonth() + i, 1);
     const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
     buckets[key] = 0;
+    // mostramos el "día 01" para cumplir dd/mm/aaaa en la etiqueta
+    labels.push(fmtDate.format(new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), 1))));
   }
   filteredDeaths.forEach((d) => {
-    const m = d.death_time_utc.slice(0, 7);
+    const m = d.death_time_utc.slice(0, 7); // YYYY-MM
     if (m in buckets) buckets[m] += 1;
   });
 
-  const labels = Object.keys(buckets);
-  const data = labels.map((k) => buckets[k]);
+  const data = Object.keys(buckets).map((k) => buckets[k]);
 
   barDeathsMonthly = new Chart(ctx, {
     type: "bar",
