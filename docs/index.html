@@ -8,6 +8,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* Evita saltos raros en los canvas */
+    canvas { display: block; }
+  </style>
 </head>
 <body class="bg-slate-950 text-slate-100">
   <header class="px-6 py-5 border-b border-slate-800">
@@ -73,19 +77,27 @@
       <div id="chartsOverview" class="grid md:grid-cols-2 gap-6">
         <div class="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 class="mb-2 font-semibold">Historial de Level (por jugador)</h2>
-          <canvas id="levelLineChart" height="120"></canvas>
+          <div class="h-80">
+            <canvas id="levelLineChart" class="w-full h-full"></canvas>
+          </div>
         </div>
         <div class="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 class="mb-2 font-semibold">Ganancia diaria (por jugador)</h2>
-          <canvas id="gainLineChart" height="120"></canvas>
+          <div class="h-80">
+            <canvas id="gainLineChart" class="w-full h-full"></canvas>
+          </div>
         </div>
         <div class="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 class="mb-2 font-semibold">Ganancia acumulada por Vocation (últimos 7 días)</h2>
-          <canvas id="barGainByVoc" height="120"></canvas>
+          <div class="h-80">
+            <canvas id="barGainByVoc" class="w-full h-full"></canvas>
+          </div>
         </div>
         <div class="bg-slate-900 rounded-2xl p-4 shadow">
           <h2 class="mb-2 font-semibold">Muertes por mes (últimos 6 meses)</h2>
-          <canvas id="barDeathsMonthly" height="120"></canvas>
+          <div class="h-80">
+            <canvas id="barDeathsMonthly" class="w-full h-full"></canvas>
+          </div>
         </div>
       </div>
     </section>
