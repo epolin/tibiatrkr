@@ -1,25 +1,22 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Tibia Level Tracker</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
-  <script>
-    dayjs.extend(dayjs_plugin_utc); dayjs.extend(dayjs_plugin_timezone);
-  </script>
   <link rel="icon" href="https://www.tibia.com/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100">
   <header class="px-6 py-5 border-b border-slate-800">
     <div class="max-w-6xl mx-auto flex items-center justify-between">
       <h1 class="text-2xl font-semibold">Tibia Level Tracker</h1>
-      <a class="text-sm text-slate-300 hover:text-white underline" href="data/levels.csv">Descargar CSV</a>
+      <nav class="text-sm text-slate-400 space-x-4">
+        <a class="hover:text-white" href="#" id="tabSnap">Snapshots</a>
+        <a class="hover:text-white" href="#" id="tabDeaths">Deaths</a>
+      </nav>
     </div>
   </header>
 
@@ -36,19 +33,20 @@
       </div>
       <div>
         <label class="block text-sm mb-1">Desde</label>
-        <input id="startDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2" />
+        <input id="startDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
       </div>
       <div>
         <label class="block text-sm mb-1">Hasta</label>
-        <input id="endDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2" />
+        <input id="endDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
       </div>
       <div class="md:col-span-4 flex gap-2">
         <button id="resetBtn" class="bg-slate-100 text-slate-900 rounded-xl px-4 py-2">Limpiar filtros</button>
+        <span id="status" class="text-slate-400 text-sm self-center"></span>
       </div>
     </section>
 
     <!-- KPIs -->
-    <section class="grid md:grid-cols-4 gap-4">
+    <section id="kpis" class="grid md:grid-cols-4 gap-4">
       <div class="bg-slate-900 rounded-2xl p-4 shadow">
         <div class="text-slate-400 text-sm">Jugadores</div>
         <div id="kpiPlayers" class="text-3xl font-semibold">-</div>
@@ -69,11 +67,10 @@
     </section>
 
     <!-- Gráficas -->
-    <section class="grid md:grid-cols-2 gap-6">
+    <section id="charts" class="grid md:grid-cols-2 gap-6">
       <div class="bg-slate-900 rounded-2xl p-4 shadow">
         <h2 class="mb-2 font-semibold">Evolución</h2>
         <canvas id="lineChart" height="120"></canvas>
-        <p class="text-xs text-slate-400 mt-2">Si eliges un jugador muestra su línea de Level; si dejas “Todos”, muestra el promedio por vocation.</p>
       </div>
       <div class="bg-slate-900 rounded-2xl p-4 shadow">
         <h2 class="mb-2 font-semibold">Ganancia por Vocation (últimos 7 días)</h2>
@@ -81,8 +78,8 @@
       </div>
     </section>
 
-    <!-- Tabla -->
-    <section class="bg-slate-900 rounded-2xl p-4 shadow">
+    <!-- Tabla Snapshots -->
+    <section id="snapTableSec" class="bg-slate-900 rounded-2xl p-4 shadow">
       <h2 class="mb-2 font-semibold">Último Level por jugador</h2>
       <div class="overflow-auto">
         <table class="min-w-full text-sm">
@@ -95,12 +92,28 @@
               <th class="text-right py-2">Último registro</th>
             </tr>
           </thead>
-          <tbody id="dataTable"></tbody>
+          <tbody id="snapTable"></tbody>
         </table>
       </div>
     </section>
-  </main>
 
-  <script src="app.js"></script>
-</body>
-</html>
+    <!-- Tabla Deaths -->
+    <section id="deathTableSec" class="bg-slate-900 rounded-2xl p-4 shadow hidden">
+      <h2 class="mb-2 font-semibold">Deaths recientes</h2>
+      <div class="overflow-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-slate-400">
+            <tr>
+              <th class="text-left py-2">Jugador</th>
+              <th class="text-left py-2">Fecha (UTC)</th>
+              <th class="text-right py-2">Level</th>
+              <th class="text-left py-2">Razón</th>
+              <th class="text-left py-2">Killers</th>
+              <th class="text-left py-2">Assists</th>
+              <th class="text-right py-2">Días desde muerte</th>
+            </tr>
+          </thead>
+          <tbody id="deathTable"></tbody>
+        </table>
+      </div>
+    </section
