@@ -3,7 +3,6 @@
 // =====================
 const SUPABASE_URL = "https://kqggdbjwwiyzhhnblfmd.supabase.co";   // <-- CAMBIA
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZ2dkYmp3d2l5emhobmJsZm1kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTkyNTgsImV4cCI6MjA3MjY3NTI1OH0.nOcDOSNOhyN_CSboaAfuHvbRQic4NPWgpL78SBG7tT0";                  // <-- CAMBIA
-
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
@@ -222,15 +221,15 @@ function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
     .map((rows) => rows.sort(byDateAsc).at(-1));
   sel("kpiPlayers").textContent = uniq(latestByPlayer.map((r) => r.player)).length || "-";
 
-  // Avg gain 7d / 30d
+  // Avg gain 7d / 30d (IGNORAR gain = null)
   const cut7 = new Date(); cut7.setDate(cut7.getDate() - 7); const cut7s = cut7.toISOString().slice(0, 10);
   const cut30 = new Date(); cut30.setDate(cut30.getDate() - 30); const cut30s = cut30.toISOString().slice(0, 10);
 
-  const g7 = filteredGains.filter((g) => g.date >= cut7s);
-  const g30 = filteredGains.filter((g) => g.date >= cut30s);
+  const g7 = filteredGains.filter((g) => g.date >= cut7s && g.gain != null);
+  const g30 = filteredGains.filter((g) => g.date >= cut30s && g.gain != null);
 
-  const avg7 = g7.length ? g7.reduce((s, x) => s + (x.gain || 0), 0) / g7.length : 0;
-  const avg30 = g30.length ? g30.reduce((s, x) => s + (x.gain || 0), 0) / g30.length : 0;
+  const avg7 = g7.length ? g7.reduce((s, x) => s + x.gain, 0) / g7.length : 0;
+  const avg30 = g30.length ? g30.reduce((s, x) => s + x.gain, 0) / g30.length : 0;
 
   sel("kpiAvgGain7").textContent = avg7.toFixed(2);
   sel("kpiAvgGain30").textContent = avg30.toFixed(2);
@@ -277,15 +276,15 @@ function renderSnapTable(filteredSnaps, filteredGains) {
     const srt = list.sort(byDateAsc);
     const latest = srt.at(-1);
     const g7 = filteredGains
-      .filter((g) => g.player === latest.player && g.date >= last7Str)
-      .reduce((s, x) => s + (x.gain || 0), 0);
+      .filter((g) => g.player === latest.player && g.date >= last7Str && g.gain != null) // IGNORA nulls
+      .reduce((s, x) => s + x.gain, 0);
 
     return `
       <tr class="border-t border-slate-800">
         <td class="py-2">${latest.player}</td>
         <td class="py-2">${latest.vocation || "-"}</td>
         <td class="py-2 text-right">${latest.level ?? "-"}</td>
-        <td class="py-2 text-right">${g7 >= 0 ? "+" + g7 : g7}</td>
+        <td class="py-2 text-right">${(g7 >= 0 ? "+" + g7 : g7)}</td>
         <td class="py-2 text-right">${latest.date}</td>
       </tr>
     `;
@@ -330,17 +329,17 @@ function renderLeaderboards(filteredGains, filteredDeaths) {
   const cut7 = new Date(); cut7.setDate(cut7.getDate() - 7); const cut7s = cut7.toISOString().slice(0, 10);
   const cut30 = new Date(); cut30.setDate(cut30.getDate() - 30); const cut30s = cut30.toISOString().slice(0, 10);
 
-  // Top gainers 7d
+  // Top gainers 7d (IGNORA nulls)
   const map7 = {};
-  filteredGains.filter((g) => g.date >= cut7s).forEach((g) => {
-    map7[g.player] = (map7[g.player] || 0) + (g.gain || 0);
+  filteredGains.filter((g) => g.date >= cut7s && g.gain != null).forEach((g) => {
+    map7[g.player] = (map7[g.player] || 0) + g.gain;
   });
   const top7 = Object.entries(map7).sort((a, b) => b[1] - a[1]).slice(0, 20);
 
-  // Top gainers 30d
+  // Top gainers 30d (IGNORA nulls)
   const map30 = {};
-  filteredGains.filter((g) => g.date >= cut30s).forEach((g) => {
-    map30[g.player] = (map30[g.player] || 0) + (g.gain || 0);
+  filteredGains.filter((g) => g.date >= cut30s && g.gain != null).forEach((g) => {
+    map30[g.player] = (map30[g.player] || 0) + g.gain;
   });
   const top30 = Object.entries(map30).sort((a, b) => b[1] - a[1]).slice(0, 20);
 
@@ -402,11 +401,13 @@ function renderGainLine(filteredGains) {
   const pSel = sel("playerSelect").value;
   const series = pSel === "__ALL__"
     ? []
-    : filteredGains.filter((g) => g.player === pSel).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    : filteredGains
+        .filter((g) => g.player === pSel) // puede traer nulls; Chart con spanGaps los salta
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   gainLineChart = new Chart(ctx, {
     type: "line",
-    data: { labels: series.map((r) => r.date), datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain ?? 0) }] },
+    data: { labels: series.map((r) => r.date), datasets: [{ label: `Ganancia diaria - ${pSel === "__ALL__" ? "Selecciona un jugador" : pSel}`, data: series.map((r) => r.gain) }] },
     options: { responsive: true, maintainAspectRatio: false, spanGaps: true },
   });
 }
@@ -417,7 +418,7 @@ function renderBarGainByVoc(filteredSnaps, filteredGains) {
   if (barGainByVoc) barGainByVoc.destroy();
 
   const cut = new Date(); cut.setDate(cut.getDate() - 7); const cutStr = cut.toISOString().slice(0, 10);
-  const gainsRecent = filteredGains.filter((g) => g.date >= cutStr);
+  const gainsRecent = filteredGains.filter((g) => g.date >= cutStr && g.gain != null);
   const lastByPD = lastSnapshotByPlayerDate(filteredSnaps);
   const sums = {};
 
@@ -425,7 +426,7 @@ function renderBarGainByVoc(filteredSnaps, filteredGains) {
     const key = `${g.player}|${g.date}`;
     const snap = lastByPD.get(key);
     const voc = (snap && snap.vocation) || "Unknown";
-    sums[voc] = (sums[voc] || 0) + (g.gain || 0);
+    sums[voc] = (sums[voc] || 0) + g.gain;
   }
 
   const labels = Object.keys(sums).sort();
