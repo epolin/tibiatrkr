@@ -7,7 +7,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
 // Rango de dias a cargar inicialmente
-const DEFAULT\_DAYS = 180;
+const DEFAULT_DAYS = 180;
 
 // =====================
 //  Estado
