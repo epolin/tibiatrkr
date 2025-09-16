@@ -175,7 +175,9 @@ function applyFiltersGains(data){
 function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
   // Jugadores activos
   const lastDateYMD = filteredSnaps.map(r=>r.date).sort().at(-1);
-  const latestByPlayer = Object.values(groupBy(filteredSnaps.filter(r=>r.date===lastDateYMD), "player")).map(rows=>rows.sort(byDateAsc).at(-1));
+  const latestByPlayer = Object.values(
+    groupBy(filteredSnaps.filter(r=>r.date===lastDateYMD), "player")
+  ).map(rows=>rows.sort(byDateAsc).at(-1));
   sel("kpiPlayers").textContent = uniq(latestByPlayer.map(r=>r.player)).length || "-";
 
   // Promedios (ignora nulls)
@@ -210,17 +212,49 @@ function computeKPIs(filteredSnaps, filteredGains, filteredDeaths) {
     sel("kpiStreakDays").textContent = "";
   }
 
-  // NUEVO: Días sin accidentes (equipo)
+  // ===== DÍAS SIN ACCIDENTES (EQUIPO) =====
   const lastDeathGlobal = filteredDeaths.sort(byDateAsc).at(-1)?.death_time_utc;
+
+  // referencias al card e ícono
+  const card = sel("kpiNoAccCard");
+  const icon = sel("kpiNoAccIcon");
+
+  // clases base del card (las reconstruimos siempre, y luego añadimos color)
+  const baseClasses = [
+    "rounded-2xl","p-4","shadow","transition-colors","duration-300",
+    "border","bg-slate-900","border-slate-800"
+  ];
+
   if (lastDeathGlobal){
     const days = daysBetween(lastDeathGlobal, new Date().toISOString());
     sel("kpiDaysNoAcc").textContent = `${days}`;
     sel("kpiLastDeathGlobal").textContent = `Último: ${toDDMMYYYY_HHMM(lastDeathGlobal)}`;
+
+    // semáforo de color y emoji “dramático”
+    let colorClasses, emoji;
+    if (days <= 5) {          // 🔴 rojo
+      colorClasses = ["bg-red-900/60","border-red-700","text-red-100"];
+      emoji = "🪖";
+    } else if (days <= 10) {  // 🟡 amarillo
+      colorClasses = ["bg-yellow-900/50","border-yellow-700","text-yellow-100"];
+      emoji = "🪖";
+    } else {                  // 🟢 verde
+      colorClasses = ["bg-emerald-900/50","border-emerald-700","text-emerald-100"];
+      emoji = "🪖";
+    }
+
+    card.className = [...baseClasses, ...colorClasses].join(" ");
+    icon.textContent = emoji;
+
   } else {
+    // Sin deaths registradas
     sel("kpiDaysNoAcc").textContent = "—";
     sel("kpiLastDeathGlobal").textContent = "Sin deaths registradas";
+    card.className = baseClasses.join(" ");     // vuelve a estado neutro
+    icon.textContent = "🪖";
   }
 }
+
 
 // =====================
 //  Tablas
