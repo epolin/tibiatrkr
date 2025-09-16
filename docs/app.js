@@ -5,7 +5,8 @@ const SUPABASE_URL = "https://kqggdbjwwiyzhhnblfmd.supabase.co";   // <-- CAMBIA
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZ2dkYmp3d2l5emhobmJsZm1kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTkyNTgsImV4cCI6MjA3MjY3NTI1OH0.nOcDOSNOhyN_CSboaAfuHvbRQic4NPWgpL78SBG7tT0";                  // <-- CAMBIA
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Rango de días a cargar inicialmente
+
+// Rango de dias a cargar inicialmente
 const DEFAULT\_DAYS = 180;
 
 // =====================
@@ -37,7 +38,7 @@ const fmtDateTime = new Intl.DateTimeFormat("es-MX", {
 timeZone: MX\_TZ, day: "2-digit", month: "2-digit", year: "numeric",
 hour: "2-digit", minute: "2-digit", hour12: false
 });
-function fromYMD(ymd){ return ymd ? new Date(`${ymd}T12:00:00Z`) : null; }
+function fromYMD(ymd){ return ymd ? new Date(ymd + "T12:00:00Z") : null; }
 function fromISO(iso){ return iso ? new Date(iso) : null; }
 function toDDMMYYYY(ymd){ const d=fromYMD(ymd); return d?fmtDate.format(d):""; }
 function toDDMMYYYY\_HHMM(iso){ const d=fromISO(iso); return d?fmtDateTime.format(d):""; }
@@ -52,9 +53,9 @@ return acc;
 }
 
 function lastSnapshotByPlayerDate(data) {
-const map = new Map(); // `${player}|${date}` -> row más reciente
+const map = new Map(); // "player|date" -> row mas reciente
 for (const r of data) {
-const key = `${r.player}|${r.date}`;
+const key = r.player + "|" + r.date;
 const prev = map.get(key);
 if (!prev || (r.inserted\_at || "") > (prev.inserted\_at || "")) {
 map.set(key, r);
@@ -73,7 +74,7 @@ const { data, error } = await sb
 .from("snapshots").select("\*")
 .gte("date", sinceStr)
 .order("date", { ascending: true });
-if (error) { console.error(error); sel("status").textContent = "Error cargando snapshots"; return \[]; }
+if (error) { console.error("snapshots error", error); sel("status").textContent = "Error cargando snapshots"; return \[]; }
 return data || \[];
 }
 
@@ -83,7 +84,7 @@ const { data, error } = await sb
 .from("deaths").select("\*")
 .gte("death\_time\_utc", sinceIso)
 .order("death\_time\_utc", { ascending: false });
-if (error) { console.error(error); sel("status").textContent = "Error cargando deaths"; return \[]; }
+if (error) { console.error("deaths error", error); sel("status").textContent = "Error cargando deaths"; return \[]; }
 return data || \[];
 }
 
@@ -94,15 +95,15 @@ const { data, error } = await sb
 .from("daily\_gains\_log").select("\*")
 .gte("date", sinceStr)
 .order("date", { ascending: true });
-if (error) { console.error(error); sel("status").textContent = "Error cargando daily gains"; return \[]; }
+if (error) { console.error("gains\_log error", error); sel("status").textContent = "Error cargando daily gains"; return \[]; }
 return data || \[];
 }
 
 async function loadData() {
-sel("status").textContent = "Cargando…";
+sel("status").textContent = "Cargando...";
 const \[s, d, g] = await Promise.all(\[ loadSnapshots(), loadDeaths(), loadGainsLog() ]);
 snaps = s; deaths = d; gainsLog = g;
-sel("status").textContent = `Cargados ${snaps.length} snapshots, ${gainsLog.length} daily gains y ${deaths.length} deaths (últimos ${DEFAULT_DAYS} días)`;
+sel("status").textContent = "Cargados " + snaps.length + " snapshots, " + gainsLog.length + " daily gains y " + deaths.length + " deaths (ultimos " + DEFAULT\_DAYS + " dias)";
 }
 
 // =====================
@@ -111,8 +112,8 @@ sel("status").textContent = `Cargados ${snaps.length} snapshots, ${gainsLog.leng
 function populateFilters() {
 const players = uniq(snaps.map(r=>r.player)).sort((a,b)=>a.localeCompare(b));
 const vocs = uniq(snaps.map(r=>r.vocation).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
-sel("playerSelect").innerHTML = `<option value="__ALL__">Todos</option>` + players.map(p=>`<option>${p}</option>`).join("");
-sel("vocationSelect").innerHTML = `<option value="__ALL__">Todas</option>` + vocs.map(v=>`<option>${v}</option>`).join("");
+sel("playerSelect").innerHTML = '<option value="__ALL__">Todos</option>' + players.map(p=>'<option>'+p+'</option>').join("");
+sel("vocationSelect").innerHTML = '<option value="__ALL__">Todas</option>' + vocs.map(v=>'<option>'+v+'</option>').join("");
 
 sel("resetBtn").addEventListener("click", ()=>{
 sel("playerSelect").value="**ALL**"; sel("vocationSelect").value="**ALL**";
@@ -190,18 +191,14 @@ const avg30= g30.length?g30.reduce((s,x)=>s+x.gain,0)/g30.length:0;
 sel("kpiAvgGain7").textContent = avg7.toFixed(2);
 sel("kpiAvgGain30").textContent = avg30.toFixed(2);
 
-// Muertes últimos 30 días
+// Muertes ultimos 30 dias
 const deaths30 = filteredDeaths.filter(d=> new Date(d.death\_time\_utc) >= new Date(cut30s));
 sel("kpiDeaths30").textContent = deaths30.length;
 
-// ===== DÍAS SIN ACCIDENTES (EQUIPO) =====
+// Dias sin accidentes (equipo)
 const lastDeathGlobal = filteredDeaths.sort(byDateAsc).at(-1)?.death\_time\_utc;
-
-// referencias al card e ícono
 const card = sel("kpiNoAccCard");
 const icon = sel("kpiNoAccIcon");
-
-// clases base del card (las reconstruimos siempre, y luego añadimos color)
 const baseClasses = \[
 "rounded-2xl","p-4","shadow","transition-colors","duration-300",
 "border","bg-slate-900","border-slate-800"
@@ -209,26 +206,19 @@ const baseClasses = \[
 
 if (lastDeathGlobal){
 const days = daysBetween(lastDeathGlobal, new Date().toISOString());
-sel("kpiDaysNoAcc").textContent = `${days}`;
-sel("kpiLastDeathGlobal").textContent = `Último: ${toDDMMYYYY_HHMM(lastDeathGlobal)}`;
-
-```
-// semáforo de color y emoji
-let colorClasses, emoji;
-if (days <= 5) {          // 🔴 rojo
-  colorClasses = ["bg-red-900/60","border-red-700","text-red-100"]; emoji = "🪖";
-} else if (days <= 10) {  // 🟡 amarillo
-  colorClasses = ["bg-yellow-900/50","border-yellow-700","text-yellow-100"]; emoji = "🪖";
-} else {                  // 🟢 verde
-  colorClasses = ["bg-emerald-900/50","border-emerald-700","text-emerald-100"]; emoji = "🪖";
-}
-
-card.className = [...baseClasses, ...colorClasses].join(" ");
-icon.textContent = emoji;
-```
-
+sel("kpiDaysNoAcc").textContent = String(days);
+sel("kpiLastDeathGlobal").textContent = "Ultimo: " + toDDMMYYYY\_HHMM(lastDeathGlobal);
+let colorClasses;
+if (days <= 5) {
+colorClasses = \["bg-red-900/60","border-red-700","text-red-100"];
+} else if (days <= 10) {
+colorClasses = \["bg-yellow-900/50","border-yellow-700","text-yellow-100"];
 } else {
-// Sin deaths registradas
+colorClasses = \["bg-emerald-900/50","border-emerald-700","text-emerald-100"];
+}
+card.className = baseClasses.concat(colorClasses).join(" ");
+icon.textContent = "🪖";
+} else {
 sel("kpiDaysNoAcc").textContent = "—";
 sel("kpiLastDeathGlobal").textContent = "Sin deaths registradas";
 card.className = baseClasses.join(" ");
@@ -242,7 +232,7 @@ icon.textContent = "🪖";
 function renderSnapTable(filteredSnaps, filteredGains) {
 const tbody = sel("snapTable");
 if (!tbody) return;
-if (!filteredSnaps.length) { tbody.innerHTML = `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`; return; }
+if (!filteredSnaps.length) { tbody.innerHTML = '<tr><td class="py-3 text-slate-400">Sin datos</td></tr>'; return; }
 
 const byPlayer = groupBy(filteredSnaps, "player");
 const last7 = new Date(); last7.setDate(last7.getDate()-7); const last7Str=last7.toISOString().slice(0,10);
@@ -255,15 +245,15 @@ const g7 = applyFiltersGains(gainsLog)
 .reduce((s,x)=>s+x.gain,0);
 
 ```
-return `
-  <tr class="border-t border-slate-800">
-    <td class="py-2">${latest.player}</td>
-    <td class="py-2">${latest.vocation || "-"}</td>
-    <td class="py-2 text-right">${latest.level ?? "-"}</td>
-    <td class="py-2 text-right">${g7>=0?`+${g7}`:g7}</td>
-    <td class="py-2 text-right">${toDDMMYYYY(latest.date)}</td>
-  </tr>
-`;
+return (
+  '<tr class="border-t border-slate-800">'+
+    '<td class="py-2">'+latest.player+'</td>'+
+    '<td class="py-2">'+(latest.vocation || '-')+'</td>'+
+    '<td class="py-2 text-right">'+(latest.level ?? '-')+'</td>'+
+    '<td class="py-2 text-right">'+(g7>=0?('+'+g7):g7)+'</td>'+
+    '<td class="py-2 text-right">'+toDDMMYYYY(latest.date)+'</td>'+
+  '</tr>'
+);
 ```
 
 }).join("");
@@ -273,15 +263,24 @@ tbody.innerHTML = html;
 function renderDeathTable(filteredDeaths) {
 const tbody = sel("deathTable");
 if (!tbody) return;
-if (!filteredDeaths.length) { tbody.innerHTML = `<tr><td class="py-3 px-2 text-slate-400">Sin deaths en el rango</td></tr>`; return; }
+if (!filteredDeaths.length) { tbody.innerHTML = '<tr><td class="py-3 px-2 text-slate-400">Sin deaths en el rango</td></tr>'; return; }
 
 const now = Date.now();
 const html = filteredDeaths.sort(byDateAsc).reverse().map(d=>{
 const diffDays = Math.floor((now - new Date(d.death\_time\_utc).getTime())/86400000);
-const killers=(d.killers||\[]).join("; ");
-const assists=(d.assists||\[]).join("; ");
-return `       <tr class="border-t border-slate-800 align-top">         <td class="py-2 px-2">${d.player}</td>         <td class="py-2 px-2">${toDDMMYYYY_HHMM(d.death_time_utc)}</td>         <td class="py-2 pr-4 pl-2 text-right tabular-nums">${d.level_at_death ?? "-"}</td>         <td class="py-2 pl-4 pr-2 whitespace-normal break-words">${d.reason || "-"}</td>         <td class="py-2 px-2 whitespace-normal break-words">${killers || "-"}</td>         <td class="py-2 px-2 whitespace-normal break-words">${assists || "-"}</td>         <td class="py-2 px-2 text-right tabular-nums">${diffDays}</td>       </tr>
-    `;
+const killers=(d.killers||\[]).join('; ');
+const assists=(d.assists||\[]).join('; ');
+return (
+'<tr class="border-t border-slate-800 align-top">'+
+'<td class="py-2 px-2">'+d.player+'</td>'+
+'<td class="py-2 px-2">'+toDDMMYYYY\_HHMM(d.death\_time\_utc)+'</td>'+
+'<td class="py-2 pr-4 pl-2 text-right tabular-nums">'+(d.level\_at\_death ?? '-')+'</td>'+
+'<td class="py-2 pl-4 pr-2 whitespace-normal break-words">'+(d.reason || '-')+'</td>'+
+'<td class="py-2 px-2 whitespace-normal break-words">'+(killers || '-')+'</td>'+
+'<td class="py-2 px-2 whitespace-normal break-words">'+(assists || '-')+'</td>'+
+'<td class="py-2 px-2 text-right tabular-nums">'+diffDays+'</td>'+
+'</tr>'
+);
 }).join("");
 tbody.innerHTML = html;
 }
@@ -297,13 +296,13 @@ const map30={}; applyFiltersGains(filteredGains).filter(g=>g.date>=cut30s && g.g
 const dmap={}; applyFiltersDeaths(filteredDeaths).filter(d=> new Date(d.death\_time\_utc)>= new Date(cut30s)).forEach(d=>{ dmap\[d.player]=(dmap\[d.player]||0)+1; });
 
 const lb7 = sel("lb7"), lb30=sel("lb30"), lbDeaths=sel("lbDeaths");
-if (lb7) lb7.innerHTML = Object.entries(map7).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,g])=>`<tr class="border-t border-slate-800"><td class="py-2">${p}</td><td class="py-2 text-right">+${g}</td></tr>`).join("") || `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`;
-if (lb30) lb30.innerHTML= Object.entries(map30).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,g])=>`<tr class="border-t border-slate-800"><td class="py-2">${p}</td><td class="py-2 text-right">+${g}</td></tr>`).join("") || `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`;
-if (lbDeaths) lbDeaths.innerHTML= Object.entries(dmap).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,c])=>`<tr class="border-t border-slate-800"><td class="py-2">${p}</td><td class="py-2 text-right">${c}</td></tr>`).join("") || `<tr><td class="py-3 text-slate-400">Sin datos</td></tr>`;
+if (lb7) lb7.innerHTML = Object.entries(map7).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,g])=>'<tr class="border-t border-slate-800"><td class="py-2">'+p+'</td><td class="py-2 text-right">+'+g+'</td></tr>').join("") || '<tr><td class="py-3 text-slate-400">Sin datos</td></tr>';
+if (lb30) lb30.innerHTML= Object.entries(map30).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,g])=>'<tr class="border-t border-slate-800"><td class="py-2">'+p+'</td><td class="py-2 text-right">+'+g+'</td></tr>').join("") || '<tr><td class="py-3 text-slate-400">Sin datos</td></tr>';
+if (lbDeaths) lbDeaths.innerHTML= Object.entries(dmap).sort((a,b)=>b\[1]-a\[1]).slice(0,20).map((\[p,c])=>'<tr class="border-t border-slate-800"><td class="py-2">'+p+'</td><td class="py-2 text-right">'+c+'</td></tr>').join("") || '<tr><td class="py-3 text-slate-400">Sin datos</td></tr>';
 }
 
 // =====================
-//  Gráficas
+//  Graficas
 // =====================
 // 1) Historial de level por JUGADOR (serie = player)
 function renderLevelLine(filteredSnaps) {
@@ -316,7 +315,7 @@ const players = uniq(filteredSnaps.map(r=>r.player)).sort((a,b)=>a.localeCompare
 
 const datasets = players.map(player=>{
 const data = dates.map(d=>{
-const snap = byPD.get(`${player}|${d}`);
+const snap = byPD.get(player + '|' + d);
 return snap ? (snap.level ?? null) : null;
 });
 return { label: player, data };
@@ -329,7 +328,7 @@ options: { responsive\:true, maintainAspectRatio\:false, spanGaps\:true }
 });
 }
 
-// 2) Historial de level promedio por VOCACIÓN (serie = vocación)
+// 2) Historial de level promedio por VOCACION (serie = vocacion)
 function renderLevelByVocation(filteredSnaps) {
 const ctx = sel("levelByVocChart"); if (!ctx) return;
 if (levelByVocChart) levelByVocChart.destroy();
@@ -365,7 +364,7 @@ applyFiltersGains(filteredGains).filter(g=>g.player===pSel).sort((a,b)=> String(
 gainLineChart = new Chart(ctx, {
 type:"line",
 data:{ labels: series.map(r=>toDDMMYYYY(r.date)),
-datasets:\[{ label:`Ganancia diaria - ${pSel==="__ALL__"?"Selecciona un jugador":pSel}`, data: series.map(r=>r.gain) }] },
+datasets:\[{ label:("Ganancia diaria - "+(pSel==="**ALL**"?"Selecciona un jugador"\:pSel)), data: series.map(r=>r.gain) }] },
 options:{ responsive\:true, maintainAspectRatio\:false, spanGaps\:true }
 });
 }
@@ -379,7 +378,7 @@ const gainsRecent = applyFiltersGains(filteredGains).filter(g=>g.date>=cutStr &&
 const lastByPD = lastSnapshotByPlayerDate(filteredSnaps);
 const sums = {};
 for (const g of gainsRecent){
-const snap = lastByPD.get(`${g.player}|${g.date}`);
+const snap = lastByPD.get(g.player + '|' + g.date);
 const voc = (snap && snap.vocation) || "Unknown";
 sums\[voc] = (sums\[voc]||0) + g.gain;
 }
@@ -388,7 +387,7 @@ const data=labels.map(k=>sums\[k]);
 
 barGainByVoc = new Chart(ctx, {
 type:"bar",
-data:{ labels, datasets:\[{ label:"Ganancia 7 días", data }] },
+data:{ labels, datasets:\[{ label:"Ganancia 7 dias", data }] },
 options:{ responsive\:true, maintainAspectRatio\:false }
 });
 }
@@ -402,7 +401,7 @@ const sixAgo=new Date(now\.getFullYear(), now\.getMonth()-5, 1);
 const buckets={}; const labels=\[];
 for(let i=0;i<6;i++){
 const dt=new Date(sixAgo.getFullYear(), sixAgo.getMonth()+i, 1);
-const key=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`;
+const key=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0");
 buckets\[key]=0;
 labels.push(fmtDate.format(new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), 1))));
 }
@@ -429,7 +428,7 @@ const fGains  = applyFiltersGains(gainsLog);
 
 computeKPIs(fSnaps, fGains, fDeaths);
 renderLevelLine(fSnaps);          // por jugador
-renderLevelByVocation(fSnaps);    // por vocación (promedio)
+renderLevelByVocation(fSnaps);    // por vocacion (promedio)
 renderGainLine(fGains);
 renderBarGainByVoc(fSnaps, fGains);
 renderBarDeathsMonthly(fDeaths);
